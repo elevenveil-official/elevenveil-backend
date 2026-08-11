@@ -37,4 +37,9 @@ router.get('/:id/story', async (req, res) => {
   res.json({ story });
 });
 
+router.get('/recent/:leagueId', async (req, res) => {
+  const data = await apiSportsFetch(`/fixtures?league=${req.params.leagueId}&last=5`);
+  res.json(data);
+});
+
 module.exports = router;
