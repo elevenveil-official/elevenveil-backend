@@ -3,11 +3,13 @@ const { apiSportsFetch } = require('../services/apiSportsClient');
 const { calculateMomentum } = require('../services/momentumEngine');
 const { generateMatchStory } = require('../services/storyEngine');
 const router = express.Router();
+const ALLOWED_LEAGUES = [39, 140, 135, 78, 61, 2, 3]; // Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Champions League, Europa League
 
 
 router.get('/live', async (req, res) => {
   const data = await apiSportsFetch('/fixtures?live=all');
-  res.json(data);
+  const filtered = (data?.response || []).filter(m => ALLOWED_LEAGUES.includes(m?.league?.id));
+  res.json({ ...data, response: filtered, results: filtered.length });
 });
 
 router.get('/:id/events', async (req, res) => {
@@ -38,8 +40,22 @@ router.get('/:id/story', async (req, res) => {
 });
 
 router.get('/recent/:leagueId', async (req, res) => {
-  const data = await apiSportsFetch(`/fixtures?league=${req.params.leagueId}&last=5`);
-  res.json(data);
+  let recent = [];
+  let lastErrors = null;
+
+  for (const season of [2024, 2023, 2022]) {
+    const data = await apiSportsFetch(`/fixtures?league=${req.params.leagueId}&season=${season}&status=FT`);
+    lastErrors = data?.errors;
+    const matches = data?.response || [];
+    if (matches.length > 0) {
+      recent = matches
+        .sort((a, b) => new Date(b.fixture.date) - new Date(a.fixture.date))
+        .slice(0, 5);
+      break;
+    }
+  }
+
+  res.json({ response: recent, debugErrors: lastErrors });
 });
 
 module.exports = router;
