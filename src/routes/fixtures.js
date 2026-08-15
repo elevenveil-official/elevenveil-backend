@@ -3,13 +3,34 @@ const { apiSportsFetch } = require('../services/apiSportsClient');
 const { calculateMomentum } = require('../services/momentumEngine');
 const { generateMatchStory } = require('../services/storyEngine');
 const router = express.Router();
-const ALLOWED_LEAGUES = [39, 140, 135, 78, 61, 2, 3]; // Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Champions League, Europa League
 
+const ALLOWED_LEAGUES = [39, 140, 135, 78, 61, 2, 3]; // Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Champions League, Europa League
 
 router.get('/live', async (req, res) => {
   const data = await apiSportsFetch('/fixtures?live=all');
   const filtered = (data?.response || []).filter(m => ALLOWED_LEAGUES.includes(m?.league?.id));
   res.json({ ...data, response: filtered, results: filtered.length });
+});
+
+// NUEVA RUTA INTEGRADA: /upcoming
+router.get('/upcoming', async (req, res) => {
+  const days = [0, 1, 2, 3, 4, 5, 6].map(offset => {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    return d.toISOString().split('T')[0];
+  });
+
+  const allFixtures = [];
+  for (const day of days) {
+    const data = await apiSportsFetch(`/fixtures?date=${day}`);
+    const matches = (data?.response || []).filter(
+      m => ALLOWED_LEAGUES.includes(m?.league?.id) && m?.fixture?.status?.short === 'NS'
+    );
+    allFixtures.push(...matches);
+  }
+
+  const sorted = allFixtures.sort((a, b) => new Date(a.fixture.date) - new Date(b.fixture.date));
+  res.json({ response: sorted });
 });
 
 router.get('/:id/events', async (req, res) => {
