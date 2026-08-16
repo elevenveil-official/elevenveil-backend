@@ -4,7 +4,6 @@ const { apiSportsFetch } = require('../services/apiSportsClient');
 const { scorePrediction } = require('../services/predictionScoringEngine');
 const router = express.Router();
 
-// Ruta para guardar una nueva predicción
 router.post('/', async (req, res) => {
   const { userId, fixtureId, predictedHomeScore, predictedAwayScore, matchStartTime } = req.body;
 
@@ -34,21 +33,15 @@ router.post('/', async (req, res) => {
   res.json({ prediction: data[0] });
 });
 
-// Ruta para resolver las predicciones de un partido finalizado
-router.get('/resolve/:fixtureId', async (req, res) => {
-  const fixtureId = req.params.fixtureId;
-
+async function resolveFixturePredictions(fixtureId) {
   const fixtureData = await apiSportsFetch(`/fixtures?id=${fixtureId}`);
   const fixture = fixtureData?.response?.[0];
 
   if (!fixture || fixture?.fixture?.status?.short !== 'FT') {
-    return res.status(400).json({ error: 'Match not finished yet, cannot resolve predictions.' });
+    return { resolved: 0, skipped: true, reason: 'Match not finished yet.' };
   }
 
-  const actualResult = {
-    homeScore: fixture.goals.home,
-    awayScore: fixture.goals.away,
-  };
+  const actualResult = { homeScore: fixture.goals.home, awayScore: fixture.goals.away };
 
   const { data: predictions, error: fetchError } = await supabase
     .from('match_predictions')
@@ -56,9 +49,9 @@ router.get('/resolve/:fixtureId', async (req, res) => {
     .eq('fixture_id', fixtureId)
     .is('vision_score', null);
 
-  if (fetchError) return res.status(500).json({ error: fetchError.message });
+  if (fetchError) throw new Error(fetchError.message);
   if (!predictions || predictions.length === 0) {
-    return res.json({ resolved: 0, message: 'No pending predictions for this fixture.' });
+    return { resolved: 0, message: 'No pending predictions for this fixture.' };
   }
 
   const results = [];
@@ -80,7 +73,39 @@ router.get('/resolve/:fixtureId', async (req, res) => {
     results.push({ userId: pred.user_id, ...scored });
   }
 
-  res.json({ resolved: results.length, results });
+  return { resolved: results.length, results };
+}
+
+router.get('/resolve/:fixtureId', async (req, res) => {
+  try {
+    const result = await resolveFixturePredictions(req.params.fixtureId);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/auto-resolve', async (req, res) => {
+  const { data: pending, error } = await supabase
+    .from('match_predictions')
+    .select('fixture_id')
+    .is('vision_score', null);
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  const fixtureIds = [...new Set((pending || []).map(p => p.fixture_id))];
+  const summary = [];
+
+  for (const fixtureId of fixtureIds) {
+    try {
+      const result = await resolveFixturePredictions(fixtureId);
+      summary.push({ fixtureId, ...result });
+    } catch (err) {
+      summary.push({ fixtureId, error: err.message });
+    }
+  }
+
+  res.json({ checkedFixtures: fixtureIds.length, summary });
 });
 
 module.exports = router;
