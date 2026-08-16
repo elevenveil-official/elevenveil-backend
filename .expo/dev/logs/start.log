@@ -1,0 +1,7 @@
+{"_e":"root:init","_t":1786819882799,"format":"v0-jsonl","version":"57.0.15"}
+{"_e":"env:mode","_t":1786819882802,"nodeEnv":"development","babelEnv":"development","mode":"development"}
+{"_e":"env:load","_t":1786819882812,"mode":"development","files":["../..\\..\\.env"],"env":{"API_SPORTS_KEY":"c07dda1707eebde4b85957d82c32d87e","SUPABASE_SERVICE_ROLE_KEY":"sb_secret_CE6Es7kuq9KzasDjh_kWjw_R0HuKzz5","SUPABASE_URL":"https://nszdxmzjwnoefiiktxyh.supabase.co"}}
+{"_e":"devserver:start","_t":1786819887175,"mode":"development","web":true,"baseUrl":"","asyncRoutes":false,"routerRoot":"../..\\..\\app","serverComponents":false,"serverActions":false,"serverRendering":false,"apiRoutes":false,"exporting":false}
+{"_e":"metro:config","_t":1786819896452,"serverRoot":"../..\\..","projectRoot":"../..\\..","exporting":false,"flags":{"autolinkingModuleResolution":false,"serverActions":false,"serverComponents":false,"reactCompiler":false,"optimizeGraph":false,"treeshaking":false,"logbox":false}}
+{"_e":"expo:dev-tools-plugin:load","_t":1786819901572,"plugins":[]}
+{"_e":"metro:instantiate","_t":1786819913237,"atlas":false,"workers":3,"host":"::","port":8081}
