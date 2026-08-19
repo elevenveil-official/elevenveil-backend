@@ -2,18 +2,28 @@ const express = require('express');
 const { apiSportsFetch } = require('../services/apiSportsClient');
 const { calculateMomentum } = require('../services/momentumEngine');
 const { generateMatchStory } = require('../services/storyEngine');
+const { getCached, setCache } = require('../services/simpleCache');
+
 const router = express.Router();
 
 const ALLOWED_LEAGUES = [39, 140, 135, 78, 61, 2, 3]; // Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Champions League, Europa League
 
 router.get('/live', async (req, res) => {
+  const cached = getCached('live', 20000);
+  if (cached) return res.json(cached);
+
   const data = await apiSportsFetch('/fixtures?live=all');
   const filtered = (data?.response || []).filter(m => ALLOWED_LEAGUES.includes(m?.league?.id));
-  res.json({ ...data, response: filtered, results: filtered.length });
+  const result = { ...data, response: filtered, results: filtered.length };
+  setCache('live', result);
+  res.json(result);
 });
 
-// NUEVA RUTA INTEGRADA: /upcoming
+// RUTA INTEGRADA: /upcoming (con caché de 10 minutos)
 router.get('/upcoming', async (req, res) => {
+  const cached = getCached('upcoming', 10 * 60 * 1000);
+  if (cached) return res.json(cached);
+
   const days = [0, 1, 2, 3, 4, 5, 6].map(offset => {
     const d = new Date();
     d.setDate(d.getDate() + offset);
@@ -30,7 +40,9 @@ router.get('/upcoming', async (req, res) => {
   }
 
   const sorted = allFixtures.sort((a, b) => new Date(a.fixture.date) - new Date(b.fixture.date));
-  res.json({ response: sorted });
+  const result = { response: sorted };
+  setCache('upcoming', result);
+  res.json(result);
 });
 
 router.get('/:id/events', async (req, res) => {

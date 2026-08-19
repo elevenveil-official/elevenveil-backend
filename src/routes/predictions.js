@@ -2,6 +2,7 @@ const express = require('express');
 const supabase = require('../services/supabaseClient');
 const { apiSportsFetch } = require('../services/apiSportsClient');
 const { scorePrediction } = require('../services/predictionScoringEngine');
+const { getRankForXp, getRankProgress } = require('../services/rankEngine');
 const router = express.Router();
 
 router.post('/', async (req, res) => {
@@ -66,9 +67,10 @@ async function resolveFixturePredictions(fixtureId) {
       .update({ vision_score: scored.visionScore, xp_earned: scored.xpEarned, scored_at: new Date().toISOString() })
       .eq('id', pred.id);
 
-    const { data: profile } = await supabase.from('profiles').select('xp').eq('id', pred.user_id).single();
-    const newXp = (profile?.xp || 0) + scored.xpEarned;
-    await supabase.from('profiles').update({ xp: newXp }).eq('id', pred.user_id);
+      const { data: profile } = await supabase.from('profiles').select('xp').eq('id', pred.user_id).single();
+      const newXp = (profile?.xp || 0) + scored.xpEarned;
+      const newRank = getRankForXp(newXp);
+      await supabase.from('profiles').update({ xp: newXp, rank: newRank }).eq('id', pred.user_id);
 
     results.push({ userId: pred.user_id, ...scored });
   }
@@ -106,6 +108,12 @@ router.get('/auto-resolve', async (req, res) => {
   }
 
   res.json({ checkedFixtures: fixtureIds.length, summary });
+});
+
+router.get('/rank/:userId', async (req, res) => {
+  const { data: profile, error } = await supabase.from('profiles').select('xp, rank').eq('id', req.params.userId).single();
+  if (error) return res.status(404).json({ error: 'User not found' });
+  res.json(getRankProgress(profile.xp));
 });
 
 module.exports = router;
