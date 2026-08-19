@@ -10,5 +10,8 @@ app.use('/fixtures', fixturesRoutes);
 const predictionsRoutes = require('./routes/predictions');
 app.use('/predictions', predictionsRoutes);
 
+// Aquí está la nueva ruta del leaderboard que te pedían añadir
+app.use('/leaderboard', require('./routes/leaderboard'));
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Backend corriendo en puerto ${PORT}`));
