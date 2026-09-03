@@ -3,6 +3,7 @@ const { apiSportsFetch } = require('../services/apiSportsClient');
 const { calculateMomentum } = require('../services/momentumEngine');
 const { generateMatchStory } = require('../services/storyEngine');
 const { getCached, setCache } = require('../services/simpleCache');
+const { calculatePlayerRadar } = require('../services/radarEngine');
 
 const router = express.Router();
 
@@ -89,6 +90,23 @@ router.get('/recent/:leagueId', async (req, res) => {
   }
 
   res.json({ response: recent, debugErrors: lastErrors });
+});
+
+router.get('/:fixtureId/player/:playerId/radar', async (req, res) => {
+  const data = await apiSportsFetch(`/fixtures/players?fixture=${req.params.fixtureId}`);
+  let playerStats = null;
+
+  for (const team of data?.response || []) {
+    const found = team.players?.find(p => String(p.player.id) === String(req.params.playerId));
+    if (found) {
+      playerStats = found.statistics?.[0];
+      break;
+    }
+  }
+
+  const radar = calculatePlayerRadar(playerStats);
+  const rating = playerStats?.games?.rating || null;
+  res.json({ radar, rating });
 });
 
 module.exports = router;
