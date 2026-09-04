@@ -1,0 +1,18 @@
+module.exports = [
+    { id: 'real-madrid', matchKeyword: 'Real Madrid' },
+    { id: 'barcelona', matchKeyword: 'Barcelona' },
+    { id: 'atletico-madrid', matchKeyword: 'Atletico' },
+    { id: 'man-city', matchKeyword: 'Manchester City' },
+    { id: 'man-utd', matchKeyword: 'Manchester United' },
+    { id: 'liverpool', matchKeyword: 'Liverpool' },
+    { id: 'arsenal', matchKeyword: 'Arsenal' },
+    { id: 'chelsea', matchKeyword: 'Chelsea' },
+    { id: 'bayern', matchKeyword: 'Bayern' },
+    { id: 'dortmund', matchKeyword: 'Dortmund' },
+    { id: 'psg', matchKeyword: 'Paris' },
+    { id: 'juventus', matchKeyword: 'Juventus' },
+    { id: 'inter', matchKeyword: 'Inter' },
+    { id: 'ac-milan', matchKeyword: 'Milan' },
+    { id: 'napoli', matchKeyword: 'Napoli' },
+    { id: 'porto', matchKeyword: 'Porto' },
+  ];
