@@ -14,6 +14,7 @@ app.use('/predictions', predictionsRoutes);
 app.use('/leaderboard', require('./routes/leaderboard'));
 app.use('/followed-teams', require('./routes/followedTeams'));
 app.use('/notifications', require('./routes/notifications'));
+app.use('/achievements', require('./routes/achievements'));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Backend corriendo en puerto ${PORT}`));
