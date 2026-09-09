@@ -10,6 +10,9 @@ app.use('/fixtures', fixturesRoutes);
 const predictionsRoutes = require('./routes/predictions');
 app.use('/predictions', predictionsRoutes);
 
+const vaultRoutes = require('./routes/vault');
+app.use('/vault', vaultRoutes);
+
 // Aquí está la nueva ruta del leaderboard que te pedían añadir
 app.use('/leaderboard', require('./routes/leaderboard'));
 app.use('/followed-teams', require('./routes/followedTeams'));
