@@ -116,4 +116,35 @@ router.get('/rank/:userId', async (req, res) => {
   res.json(getRankProgress(profile.xp));
 });
 
+router.get('/streak/:userId', async (req, res) => {
+  const { userId } = req.params;
+
+  const { data, error } = await supabase
+    .from('match_predictions')
+    .select('vision_score, scored_at')
+    .eq('user_id', userId)
+    .not('scored_at', 'is', null)
+    .order('scored_at', { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  let currentStreak = 0;
+  for (const pred of data) {
+    if (pred.vision_score > 0) currentStreak++;
+    else break;
+  }
+
+  let bestStreak = 0, running = 0;
+  for (const pred of [...data].reverse()) {
+    if (pred.vision_score > 0) {
+      running++;
+      bestStreak = Math.max(bestStreak, running);
+    } else {
+      running = 0;
+    }
+  }
+
+  res.json({ currentStreak, bestStreak });
+});
+
 module.exports = router;
