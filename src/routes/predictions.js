@@ -5,8 +5,9 @@ const { scorePrediction } = require('../services/predictionScoringEngine');
 const { getRankForXp, getRankProgress } = require('../services/rankEngine');
 const router = express.Router();
 
+// a) La ruta POST / acepta ahora el goleador (opcional)
 router.post('/', async (req, res) => {
-  const { userId, fixtureId, predictedHomeScore, predictedAwayScore, matchStartTime } = req.body;
+  const { userId, fixtureId, predictedHomeScore, predictedAwayScore, matchStartTime, predictedScorerId, predictedScorerName } = req.body;
 
   if (!userId || !fixtureId || predictedHomeScore == null || predictedAwayScore == null || !matchStartTime) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -25,6 +26,8 @@ router.post('/', async (req, res) => {
       fixture_id: fixtureId,
       predicted_home_score: predictedHomeScore,
       predicted_away_score: predictedAwayScore,
+      predicted_scorer_id: predictedScorerId || null,
+      predicted_scorer_name: predictedScorerName || null,
       match_start_time: matchStartTime,
       submitted_at: now.toISOString(),
     }, { onConflict: 'user_id,fixture_id' })
@@ -34,6 +37,16 @@ router.post('/', async (req, res) => {
   res.json({ prediction: data[0] });
 });
 
+// b) Función nueva para obtener goleadores excluyendo penaltis fallados y goles en propia puerta
+async function getActualScorers(fixtureId) {
+  const eventsData = await apiSportsFetch(`/fixtures/events?fixture=${fixtureId}`);
+  const events = eventsData?.response || [];
+  return events
+    .filter(e => e.type === 'Goal' && e.detail !== 'Missed Penalty' && e.detail !== 'Own Goal')
+    .map(e => e.player.id);
+}
+
+// c) Versión actualizada de resolveFixturePredictions
 async function resolveFixturePredictions(fixtureId) {
   const fixtureData = await apiSportsFetch(`/fixtures?id=${fixtureId}`);
   const fixture = fixtureData?.response?.[0];
@@ -43,6 +56,7 @@ async function resolveFixturePredictions(fixtureId) {
   }
 
   const actualResult = { homeScore: fixture.goals.home, awayScore: fixture.goals.away };
+  actualResult.scorers = await getActualScorers(fixtureId);
 
   const { data: predictions, error: fetchError } = await supabase
     .from('match_predictions')
@@ -58,7 +72,11 @@ async function resolveFixturePredictions(fixtureId) {
   const results = [];
   for (const pred of predictions) {
     const scored = scorePrediction(
-      { predictedHomeScore: pred.predicted_home_score, predictedAwayScore: pred.predicted_away_score },
+      {
+        predictedHomeScore: pred.predicted_home_score,
+        predictedAwayScore: pred.predicted_away_score,
+        predictedScorerId: pred.predicted_scorer_id,
+      },
       actualResult
     );
 
@@ -67,10 +85,10 @@ async function resolveFixturePredictions(fixtureId) {
       .update({ vision_score: scored.visionScore, xp_earned: scored.xpEarned, scored_at: new Date().toISOString() })
       .eq('id', pred.id);
 
-      const { data: profile } = await supabase.from('profiles').select('xp').eq('id', pred.user_id).single();
-      const newXp = (profile?.xp || 0) + scored.xpEarned;
-      const newRank = getRankForXp(newXp);
-      await supabase.from('profiles').update({ xp: newXp, rank: newRank }).eq('id', pred.user_id);
+    const { data: profile } = await supabase.from('profiles').select('xp').eq('id', pred.user_id).single();
+    const newXp = (profile?.xp || 0) + scored.xpEarned;
+    const newRank = getRankForXp(newXp);
+    await supabase.from('profiles').update({ xp: newXp, rank: newRank }).eq('id', pred.user_id);
 
     results.push({ userId: pred.user_id, ...scored });
   }
@@ -145,6 +163,38 @@ router.get('/streak/:userId', async (req, res) => {
   }
 
   res.json({ currentStreak, bestStreak });
+});
+
+// d) Ruta nueva para devolver las plantillas (squads) completas
+router.get('/squads/:fixtureId', async (req, res) => {
+  try {
+    const fixtureData = await apiSportsFetch(`/fixtures?id=${req.params.fixtureId}`);
+    const fixture = fixtureData?.response?.[0];
+    if (!fixture) return res.status(404).json({ error: 'Fixture not found' });
+
+    const [homeSquad, awaySquad] = await Promise.all([
+      apiSportsFetch(`/players/squads?team=${fixture.teams.home.id}`),
+      apiSportsFetch(`/players/squads?team=${fixture.teams.away.id}`),
+    ]);
+
+    const formatSquad = (squadData, teamMeta) => ({
+      teamId: teamMeta.id,
+      teamName: teamMeta.name,
+      players: (squadData?.response?.[0]?.players || []).map(p => ({
+        id: p.id,
+        name: p.name,
+        photo: p.photo,
+        position: p.position,
+      })),
+    });
+
+    res.json({
+      home: formatSquad(homeSquad, fixture.teams.home),
+      away: formatSquad(awaySquad, fixture.teams.away),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
