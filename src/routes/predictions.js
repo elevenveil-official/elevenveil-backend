@@ -5,9 +5,9 @@ const { scorePrediction } = require('../services/predictionScoringEngine');
 const { getRankForXp, getRankProgress } = require('../services/rankEngine');
 const router = express.Router();
 
-// a) La ruta POST / acepta ahora el goleador (opcional)
+// a) La ruta POST / acepta ahora también el MVP (opcional)
 router.post('/', async (req, res) => {
-  const { userId, fixtureId, predictedHomeScore, predictedAwayScore, matchStartTime, predictedScorerId, predictedScorerName } = req.body;
+  const { userId, fixtureId, predictedHomeScore, predictedAwayScore, matchStartTime, predictedScorerId, predictedScorerName, predictedMvpId, predictedMvpName } = req.body;
 
   if (!userId || !fixtureId || predictedHomeScore == null || predictedAwayScore == null || !matchStartTime) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -28,6 +28,8 @@ router.post('/', async (req, res) => {
       predicted_away_score: predictedAwayScore,
       predicted_scorer_id: predictedScorerId || null,
       predicted_scorer_name: predictedScorerName || null,
+      predicted_mvp_id: predictedMvpId || null,
+      predicted_mvp_name: predictedMvpName || null,
       match_start_time: matchStartTime,
       submitted_at: now.toISOString(),
     }, { onConflict: 'user_id,fixture_id' })
@@ -37,13 +39,31 @@ router.post('/', async (req, res) => {
   res.json({ prediction: data[0] });
 });
 
-// b) Función nueva para obtener goleadores excluyendo penaltis fallados y goles en propia puerta
+// b) Función para obtener goleadores excluyendo penaltis fallados y goles en propia puerta
 async function getActualScorers(fixtureId) {
   const eventsData = await apiSportsFetch(`/fixtures/events?fixture=${fixtureId}`);
   const events = eventsData?.response || [];
   return events
     .filter(e => e.type === 'Goal' && e.detail !== 'Missed Penalty' && e.detail !== 'Own Goal')
     .map(e => e.player.id);
+}
+
+// Función nueva para determinar el MVP en función de la mejor puntuación (rating)
+async function getActualMvp(fixtureId) {
+  const data = await apiSportsFetch(`/fixtures/players?fixture=${fixtureId}`);
+  const teams = data?.response || [];
+  let best = null;
+  for (const team of teams) {
+    for (const p of team.players || []) {
+      const stat = p.statistics?.[0];
+      const minutes = stat?.games?.minutes || 0;
+      const rating = stat?.games?.rating ? parseFloat(stat.games.rating) : null;
+      if (minutes > 0 && rating != null && (!best || rating > best.rating)) {
+        best = { id: p.player.id, rating };
+      }
+    }
+  }
+  return best?.id || null;
 }
 
 // c) Versión actualizada de resolveFixturePredictions
@@ -57,6 +77,7 @@ async function resolveFixturePredictions(fixtureId) {
 
   const actualResult = { homeScore: fixture.goals.home, awayScore: fixture.goals.away };
   actualResult.scorers = await getActualScorers(fixtureId);
+  actualResult.mvpId = await getActualMvp(fixtureId);
 
   const { data: predictions, error: fetchError } = await supabase
     .from('match_predictions')
@@ -76,6 +97,7 @@ async function resolveFixturePredictions(fixtureId) {
         predictedHomeScore: pred.predicted_home_score,
         predictedAwayScore: pred.predicted_away_score,
         predictedScorerId: pred.predicted_scorer_id,
+        predictedMvpId: pred.predicted_mvp_id,
       },
       actualResult
     );
@@ -89,6 +111,7 @@ async function resolveFixturePredictions(fixtureId) {
         correct_result: scored.correctResult,
         correct_scoreline: scored.correctScoreline,
         correct_scorer: scored.correctScorer,
+        correct_mvp: scored.correctMvp,
       })
       .eq('id', pred.id);
 
@@ -172,11 +195,12 @@ router.get('/streak/:userId', async (req, res) => {
   res.json({ currentStreak, bestStreak });
 });
 
+// d) Ruta /football-iq/:userId actualizada para calcular la precisión del MVP
 router.get('/football-iq/:userId', async (req, res) => {
   const { userId } = req.params;
   const { data, error } = await supabase
     .from('match_predictions')
-    .select('correct_result, correct_scoreline, correct_scorer, predicted_scorer_id')
+    .select('correct_result, correct_scoreline, correct_scorer, correct_mvp, predicted_scorer_id, predicted_mvp_id')
     .eq('user_id', userId)
     .not('scored_at', 'is', null);
 
@@ -184,6 +208,7 @@ router.get('/football-iq/:userId', async (req, res) => {
 
   const total = data.length;
   const scorerPicksMade = data.filter(p => p.predicted_scorer_id).length;
+  const mvpPicksMade = data.filter(p => p.predicted_mvp_id).length;
 
   const pct = (count, denom) => (denom > 0 ? Math.round((count / denom) * 100) : 0);
 
@@ -193,10 +218,12 @@ router.get('/football-iq/:userId', async (req, res) => {
     scorelineAccuracy: pct(data.filter(p => p.correct_scoreline).length, total),
     scorerAccuracy: pct(data.filter(p => p.correct_scorer).length, scorerPicksMade),
     scorerPicksMade,
+    mvpAccuracy: pct(data.filter(p => p.correct_mvp).length, mvpPicksMade),
+    mvpPicksMade,
   });
 });
 
-// d) Ruta nueva para devolver las plantillas (squads) completas
+// Ruta para devolver las plantillas (squads) completas
 router.get('/squads/:fixtureId', async (req, res) => {
   try {
     const fixtureData = await apiSportsFetch(`/fixtures?id=${req.params.fixtureId}`);
