@@ -19,6 +19,60 @@ router.get('/check-followed-matches', async (req, res) => {
   const liveMatches = liveData?.response || [];
   if (liveMatches.length === 0) return res.json({ checked: 0, notified: 0 });
 
+  router.get('/prediction-reminders', async (req, res) => {
+    const upcomingData = getCached('upcoming', 10 * 60 * 1000);
+    const upcomingMatches = upcomingData?.response || [];
+    if (upcomingMatches.length === 0) return res.json({ checked: 0, notified: 0 });
+  
+    const now = Date.now();
+    const windowMs = 60 * 60 * 1000; // próximos 60 minutos
+    const dueMatches = upcomingMatches.filter(m => {
+      const kickoff = new Date(m.fixture.date).getTime();
+      return kickoff > now && kickoff <= now + windowMs;
+    });
+    if (dueMatches.length === 0) return res.json({ checked: 0, notified: 0 });
+  
+    const { data: profiles } = await supabase.from('profiles').select('id, push_token').not('push_token', 'is', null);
+    const { data: followed } = await supabase.from('followed_teams').select('user_id, team_id');
+  
+    let notifiedCount = 0;
+  
+    for (const match of dueMatches) {
+      const fixtureId = match.fixture.id;
+      const homeName = match.teams?.home?.name;
+      const awayName = match.teams?.away?.name;
+  
+      const relevantTeamIds = TEAMS.filter(t => isTeamInMatch(t.matchKeyword, homeName, awayName)).map(t => t.id);
+      if (relevantTeamIds.length === 0) continue;
+  
+      const followerIds = (followed || []).filter(f => relevantTeamIds.includes(f.team_id)).map(f => f.user_id);
+      if (followerIds.length === 0) continue;
+  
+      const { data: existingPredictions } = await supabase
+        .from('match_predictions')
+        .select('user_id')
+        .eq('fixture_id', fixtureId);
+      const alreadyPredictedIds = (existingPredictions || []).map(p => p.user_id);
+  
+      const pendingUserIds = followerIds.filter(id => !alreadyPredictedIds.includes(id));
+      if (pendingUserIds.length === 0) continue;
+  
+      const tokens = (profiles || []).filter(p => pendingUserIds.includes(p.id)).map(p => p.push_token).filter(Boolean);
+      if (tokens.length === 0) continue;
+  
+      const { error: insertError } = await supabase.from('notified_events').insert({ fixture_id: fixtureId, event_key: 'prediction-reminder' });
+      if (insertError) continue;
+  
+      const text = `${homeName} vs ${awayName} kicks off soon — lock in your Match Vision before it's too late.`;
+      for (const token of tokens) {
+        await sendPushNotification(token, 'Behind the Veil', text);
+      }
+      notifiedCount += tokens.length;
+    }
+  
+    res.json({ checked: dueMatches.length, notified: notifiedCount });
+  });
+
   const { data: profiles } = await supabase.from('profiles').select('id, push_token').not('push_token', 'is', null);
   const { data: followed } = await supabase.from('followed_teams').select('user_id, team_id');
 
