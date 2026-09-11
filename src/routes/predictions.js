@@ -82,7 +82,14 @@ async function resolveFixturePredictions(fixtureId) {
 
     await supabase
       .from('match_predictions')
-      .update({ vision_score: scored.visionScore, xp_earned: scored.xpEarned, scored_at: new Date().toISOString() })
+      .update({
+        vision_score: scored.visionScore,
+        xp_earned: scored.xpEarned,
+        scored_at: new Date().toISOString(),
+        correct_result: scored.correctResult,
+        correct_scoreline: scored.correctScoreline,
+        correct_scorer: scored.correctScorer,
+      })
       .eq('id', pred.id);
 
     const { data: profile } = await supabase.from('profiles').select('xp').eq('id', pred.user_id).single();
@@ -163,6 +170,30 @@ router.get('/streak/:userId', async (req, res) => {
   }
 
   res.json({ currentStreak, bestStreak });
+});
+
+router.get('/football-iq/:userId', async (req, res) => {
+  const { userId } = req.params;
+  const { data, error } = await supabase
+    .from('match_predictions')
+    .select('correct_result, correct_scoreline, correct_scorer, predicted_scorer_id')
+    .eq('user_id', userId)
+    .not('scored_at', 'is', null);
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  const total = data.length;
+  const scorerPicksMade = data.filter(p => p.predicted_scorer_id).length;
+
+  const pct = (count, denom) => (denom > 0 ? Math.round((count / denom) * 100) : 0);
+
+  res.json({
+    totalPredictions: total,
+    resultAccuracy: pct(data.filter(p => p.correct_result).length, total),
+    scorelineAccuracy: pct(data.filter(p => p.correct_scoreline).length, total),
+    scorerAccuracy: pct(data.filter(p => p.correct_scorer).length, scorerPicksMade),
+    scorerPicksMade,
+  });
 });
 
 // d) Ruta nueva para devolver las plantillas (squads) completas
