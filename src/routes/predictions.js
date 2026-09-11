@@ -195,6 +195,29 @@ router.get('/streak/:userId', async (req, res) => {
   res.json({ currentStreak, bestStreak });
 });
 
+router.get('/consensus/:fixtureId', async (req, res) => {
+  const { fixtureId } = req.params;
+  const { data, error } = await supabase
+    .from('match_predictions')
+    .select('predicted_home_score, predicted_away_score')
+    .eq('fixture_id', fixtureId);
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  const total = data.length;
+  let home = 0, draw = 0, away = 0;
+
+  data.forEach(p => {
+    if (p.predicted_home_score > p.predicted_away_score) home++;
+    else if (p.predicted_home_score < p.predicted_away_score) away++;
+    else draw++;
+  });
+
+  const pct = (n) => (total > 0 ? Math.round((n / total) * 100) : 0);
+
+  res.json({ total, homePct: pct(home), drawPct: pct(draw), awayPct: pct(away) });
+});
+
 // d) Ruta /football-iq/:userId actualizada para calcular la precisión del MVP
 router.get('/football-iq/:userId', async (req, res) => {
   const { userId } = req.params;
