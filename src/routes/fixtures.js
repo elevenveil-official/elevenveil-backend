@@ -109,4 +109,10 @@ router.get('/:fixtureId/player/:playerId/radar', async (req, res) => {
   res.json({ radar, rating });
 });
 
+router.get('/h2h/:homeId/:awayId', async (req, res) => {
+  const { homeId, awayId } = req.params;
+  const data = await apiSportsFetch(`/fixtures/headtohead?h2h=${homeId}-${awayId}&last=5`);
+  res.json(data);
+});
+
 module.exports = router;
