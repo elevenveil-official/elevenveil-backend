@@ -5,9 +5,21 @@ const { scorePrediction } = require('../services/predictionScoringEngine');
 const { getRankForXp, getRankProgress } = require('../services/rankEngine');
 const router = express.Router();
 
-// a) La ruta POST / acepta ahora también el MVP (opcional)
+// a) La ruta POST / acepta ahora también el MVP y Starter (opcionales)
 router.post('/', async (req, res) => {
-  const { userId, fixtureId, predictedHomeScore, predictedAwayScore, matchStartTime, predictedScorerId, predictedScorerName, predictedMvpId, predictedMvpName } = req.body;
+  const {
+    userId,
+    fixtureId,
+    predictedHomeScore,
+    predictedAwayScore,
+    matchStartTime,
+    predictedScorerId,
+    predictedScorerName,
+    predictedMvpId,
+    predictedMvpName,
+    predictedStarterId,
+    predictedStarterName,
+  } = req.body;
 
   if (!userId || !fixtureId || predictedHomeScore == null || predictedAwayScore == null || !matchStartTime) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -30,6 +42,8 @@ router.post('/', async (req, res) => {
       predicted_scorer_name: predictedScorerName || null,
       predicted_mvp_id: predictedMvpId || null,
       predicted_mvp_name: predictedMvpName || null,
+      predicted_starter_id: predictedStarterId || null,
+      predicted_starter_name: predictedStarterName || null,
       match_start_time: matchStartTime,
       submitted_at: now.toISOString(),
     }, { onConflict: 'user_id,fixture_id' })
@@ -48,7 +62,7 @@ async function getActualScorers(fixtureId) {
     .map(e => e.player.id);
 }
 
-// Función nueva para determinar el MVP en función de la mejor puntuación (rating)
+// Función para determinar el MVP en función de la mejor puntuación (rating)
 async function getActualMvp(fixtureId) {
   const data = await apiSportsFetch(`/fixtures/players?fixture=${fixtureId}`);
   const teams = data?.response || [];
@@ -66,6 +80,19 @@ async function getActualMvp(fixtureId) {
   return best?.id || null;
 }
 
+// Función nueva para obtener los titulares de ambos equipos
+async function getActualStarters(fixtureId) {
+  const data = await apiSportsFetch(`/fixtures/lineups?fixture=${fixtureId}`);
+  const teams = data?.response || [];
+  const starterIds = [];
+  for (const team of teams) {
+    for (const entry of team.startXI || []) {
+      if (entry.player?.id) starterIds.push(entry.player.id);
+    }
+  }
+  return starterIds;
+}
+
 // c) Versión actualizada de resolveFixturePredictions
 async function resolveFixturePredictions(fixtureId) {
   const fixtureData = await apiSportsFetch(`/fixtures?id=${fixtureId}`);
@@ -78,6 +105,7 @@ async function resolveFixturePredictions(fixtureId) {
   const actualResult = { homeScore: fixture.goals.home, awayScore: fixture.goals.away };
   actualResult.scorers = await getActualScorers(fixtureId);
   actualResult.mvpId = await getActualMvp(fixtureId);
+  actualResult.starters = await getActualStarters(fixtureId);
 
   const { data: predictions, error: fetchError } = await supabase
     .from('match_predictions')
@@ -98,6 +126,7 @@ async function resolveFixturePredictions(fixtureId) {
         predictedAwayScore: pred.predicted_away_score,
         predictedScorerId: pred.predicted_scorer_id,
         predictedMvpId: pred.predicted_mvp_id,
+        predictedStarterId: pred.predicted_starter_id,
       },
       actualResult
     );
@@ -112,6 +141,7 @@ async function resolveFixturePredictions(fixtureId) {
         correct_scoreline: scored.correctScoreline,
         correct_scorer: scored.correctScorer,
         correct_mvp: scored.correctMvp,
+        correct_starter: scored.correctStarter,
       })
       .eq('id', pred.id);
 
@@ -218,12 +248,12 @@ router.get('/consensus/:fixtureId', async (req, res) => {
   res.json({ total, homePct: pct(home), drawPct: pct(draw), awayPct: pct(away) });
 });
 
-// d) Ruta /football-iq/:userId actualizada para calcular la precisión del MVP
+// d) Ruta /football-iq/:userId actualizada con métricas de Starter
 router.get('/football-iq/:userId', async (req, res) => {
   const { userId } = req.params;
   const { data, error } = await supabase
     .from('match_predictions')
-    .select('correct_result, correct_scoreline, correct_scorer, correct_mvp, predicted_scorer_id, predicted_mvp_id')
+    .select('correct_result, correct_scoreline, correct_scorer, correct_mvp, correct_starter, predicted_scorer_id, predicted_mvp_id, predicted_starter_id')
     .eq('user_id', userId)
     .not('scored_at', 'is', null);
 
@@ -232,6 +262,7 @@ router.get('/football-iq/:userId', async (req, res) => {
   const total = data.length;
   const scorerPicksMade = data.filter(p => p.predicted_scorer_id).length;
   const mvpPicksMade = data.filter(p => p.predicted_mvp_id).length;
+  const starterPicksMade = data.filter(p => p.predicted_starter_id).length;
 
   const pct = (count, denom) => (denom > 0 ? Math.round((count / denom) * 100) : 0);
 
@@ -243,6 +274,8 @@ router.get('/football-iq/:userId', async (req, res) => {
     scorerPicksMade,
     mvpAccuracy: pct(data.filter(p => p.correct_mvp).length, mvpPicksMade),
     mvpPicksMade,
+    starterAccuracy: pct(data.filter(p => p.correct_starter).length, starterPicksMade),
+    starterPicksMade,
   });
 });
 

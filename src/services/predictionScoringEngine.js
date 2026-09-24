@@ -3,6 +3,7 @@ const SCORING_RULES = {
   correctScoreline: 60,
   correctScorer: 30,
   correctMvp: 30,
+  correctStarter: 20,
   xpMultiplier: 10,
 };
 
@@ -20,12 +21,15 @@ function scorePrediction(prediction, actualResult) {
     && (actualResult.scorers || []).includes(prediction.predictedScorerId);
   const correctMvp = !!prediction.predictedMvpId
     && prediction.predictedMvpId === actualResult.mvpId;
+  const correctStarter = !!prediction.predictedStarterId
+    && (actualResult.starters || []).includes(prediction.predictedStarterId);
 
   let rawScore = 0;
   if (correctResult) rawScore += SCORING_RULES.correctResult;
   if (correctScoreline) rawScore += SCORING_RULES.correctScoreline;
   if (correctScorer) rawScore += SCORING_RULES.correctScorer;
   if (correctMvp) rawScore += SCORING_RULES.correctMvp;
+  if (correctStarter) rawScore += SCORING_RULES.correctStarter;
 
   const visionScore = Math.min(100, rawScore);
 
@@ -35,6 +39,7 @@ function scorePrediction(prediction, actualResult) {
     correctScoreline,
     correctScorer,
     correctMvp,
+    correctStarter,
     xpEarned: visionScore * SCORING_RULES.xpMultiplier,
   };
 }
