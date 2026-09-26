@@ -184,4 +184,17 @@ router.get('/balance/:userId', async (req, res) => {
   res.json({ coins: data.coins ?? 0, net: (data.coins ?? 0) - 1000 });
 });
 
+router.get('/status/:fixtureId/:userId', async (req, res) => {
+  const { fixtureId, userId } = req.params;
+  const { data, error } = await supabase
+    .from('coin_wagers')
+    .select('*')
+    .eq('fixture_id', fixtureId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ wager: data || null });
+});
+
 module.exports = router;
