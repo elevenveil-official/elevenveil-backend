@@ -21,6 +21,7 @@ app.use('/achievements', require('./routes/achievements'));
 
 const livePredictionsRoutes = require('./routes/livePredictions');
 app.use('/live-predictions', livePredictionsRoutes);
+app.use('/coin-wagers', require('./routes/coinWagers'));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Backend corriendo en puerto ${PORT}`));
