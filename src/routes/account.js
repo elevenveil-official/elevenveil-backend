@@ -10,7 +10,8 @@ router.delete('/:userId', async (req, res) => {
     await supabase.from('coin_wagers').delete().eq('user_id', userId);
     await supabase.from('followed_teams').delete().eq('user_id', userId);
     await supabase.from('profiles').delete().eq('id', userId);
-
+    await supabase.storage.from('avatars').remove([`${userId}/avatar.jpg`]);
+    
     const { error } = await supabase.auth.admin.deleteUser(userId);
     if (error) throw new Error(error.message);
 
