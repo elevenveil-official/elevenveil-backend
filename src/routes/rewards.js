@@ -85,11 +85,12 @@ router.get('/:userId', async (req, res) => {
     const week = weekRange(now);
     const allMissions = [...MISSIONS.daily, ...MISSIONS.weekly];
 
-    const [season, profileRes, ownedRes, missionClaimsRes, progressList] = await Promise.all([
+    const [season, profileRes, ownedRes, missionClaimsRes, waitlistRes, progressList] = await Promise.all([
       getActiveSeason(),
       supabase.from('profiles').select('xp, coins, is_pro, active_title, active_banner, active_frame').eq('id', userId).single(),
       supabase.from('user_rewards').select('reward_key').eq('user_id', userId),
       supabase.from('mission_claims').select('mission_id, period_key').eq('user_id', userId).in('period_key', [day.key, week.key]),
+      supabase.from('pro_waitlist').select('user_id').eq('user_id', userId).maybeSingle(),
       Promise.all(allMissions.map((m) => PROGRESS[m.id](userId, day, week))),
     ]);
 
@@ -146,6 +147,7 @@ router.get('/:userId', async (req, res) => {
       owned: (ownedRes.data || []).map((r) => r.reward_key),
       active: { title: profile.active_title, banner: profile.active_banner, frame: profile.active_frame },
       isPro: !!profile.is_pro,
+      waitlisted: !!waitlistRes.data,
       coins: profile.coins,
       xp: profile.xp,
     });
@@ -245,4 +247,17 @@ router.put('/:userId/equip', async (req, res) => {
   }
 });
 
+// ---------- POST: apuntarse a la lista de espera de PRO ----------
+router.post('/:userId/waitlist', async (req, res) => {
+  const { userId } = req.params;
+  try {
+    const { error } = await supabase.from('pro_waitlist').insert({ user_id: userId });
+    if (error && error.code !== '23505') return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;
+
