@@ -19,6 +19,7 @@ app.use('/followed-teams', require('./routes/followedTeams'));
 app.use('/notifications', require('./routes/notifications'));
 app.use('/achievements', require('./routes/achievements'));
 app.use('/rewards', require('./routes/rewards'));
+app.use('/username', require('./routes/username'));
 
 const livePredictionsRoutes = require('./routes/livePredictions');
 app.use('/live-predictions', livePredictionsRoutes);
