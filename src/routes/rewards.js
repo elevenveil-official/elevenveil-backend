@@ -62,7 +62,8 @@ async function grantXpAndCoins(userId, { xp = 0, coins = 0 }) {
   }
   if (coins) update.coins = (p?.coins ?? 1000) + coins;
   if (Object.keys(update).length) {
-    await supabase.from('profiles').update(update).eq('id', userId);
+    const { error } = await supabase.from('profiles').update(update).eq('id', userId);
+    if (error) throw new Error(`profile_update_failed: ${error.message}`);
   }
 }
 
@@ -152,15 +153,16 @@ router.get('/:userId', async (req, res) => {
       xp: profile.xp,
     });
   } catch (e) {
+    console.error('[rewards]', req.method, req.path, e);
     res.status(500).json({ error: e.message });
   }
 });
 
 // ---------- POST: cobrar una misión ----------
 router.post('/:userId/missions/claim', async (req, res) => {
-  const { userId } = req.params;
-  const { missionId } = req.body;
   try {
+    const { userId } = req.params;
+    const { missionId } = req.body || {};
     const found = findMission(missionId);
     if (!found) return res.status(400).json({ error: 'unknown_mission' });
 
@@ -176,22 +178,31 @@ router.post('/:userId/missions/claim', async (req, res) => {
       .from('mission_claims')
       .insert({ user_id: userId, mission_id: missionId, period_key: period.key });
     if (claimErr) {
+      if (claimErr.code !== '23505') console.error('[rewards] claim insert failed', claimErr);
       return res.status(claimErr.code === '23505' ? 409 : 500).json({ error: claimErr.code === '23505' ? 'already_claimed' : claimErr.message });
     }
 
-    await grantXpAndCoins(userId, found.mission.reward);
+    try {
+      await grantXpAndCoins(userId, found.mission.reward);
+    } catch (grantErr) {
+      // Si no se pudo dar el premio, se deshace el cobro para que pueda reintentarse
+      await supabase.from('mission_claims').delete().eq('user_id', userId).eq('mission_id', missionId).eq('period_key', period.key);
+      throw grantErr;
+    }
     res.json({ success: true, reward: found.mission.reward });
   } catch (e) {
+    console.error('[rewards]', req.method, req.path, e);
     res.status(500).json({ error: e.message });
   }
 });
 
 // ---------- POST: cobrar un premio del pase ----------
 router.post('/:userId/pass/claim', async (req, res) => {
-  const { userId } = req.params;
-  const level = parseInt(req.body.level, 10);
-  const { track } = req.body;
   try {
+    const { userId } = req.params;
+    const body = req.body || {};
+    const level = parseInt(body.level, 10);
+    const { track } = body;
     if (!(level >= 1 && level <= SEASON_LEVELS) || !['free', 'pro'].includes(track)) {
       return res.status(400).json({ error: 'bad_request' });
     }
@@ -212,12 +223,19 @@ router.post('/:userId/pass/claim', async (req, res) => {
       .from('pass_claims')
       .insert({ user_id: userId, season_id: season.id, level, track });
     if (claimErr) {
+      if (claimErr.code !== '23505') console.error('[rewards] claim insert failed', claimErr);
       return res.status(claimErr.code === '23505' ? 409 : 500).json({ error: claimErr.code === '23505' ? 'already_claimed' : claimErr.message });
     }
 
-    await grantReward(userId, reward, `pass:${season.id}:${track}:${level}`);
+    try {
+      await grantReward(userId, reward, `pass:${season.id}:${track}:${level}`);
+    } catch (grantErr) {
+      await supabase.from('pass_claims').delete().eq('user_id', userId).eq('season_id', season.id).eq('level', level).eq('track', track);
+      throw grantErr;
+    }
     res.json({ success: true, reward });
   } catch (e) {
+    console.error('[rewards]', req.method, req.path, e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -226,9 +244,9 @@ router.post('/:userId/pass/claim', async (req, res) => {
 const SLOT_COLUMN = { title: 'active_title', banner: 'active_banner', frame: 'active_frame' };
 
 router.put('/:userId/equip', async (req, res) => {
-  const { userId } = req.params;
-  const { slot, id } = req.body;
   try {
+    const { userId } = req.params;
+    const { slot, id } = req.body || {};
     if (!SLOT_COLUMN[slot]) return res.status(400).json({ error: 'bad_slot' });
     if (id) {
       const { data } = await supabase
@@ -243,6 +261,7 @@ router.put('/:userId/equip', async (req, res) => {
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true, slot, id: id || null });
   } catch (e) {
+    console.error('[rewards]', req.method, req.path, e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -255,6 +274,7 @@ router.post('/:userId/waitlist', async (req, res) => {
     if (error && error.code !== '23505') return res.status(500).json({ error: error.message });
     res.json({ success: true });
   } catch (e) {
+    console.error('[rewards]', req.method, req.path, e);
     res.status(500).json({ error: e.message });
   }
 });
