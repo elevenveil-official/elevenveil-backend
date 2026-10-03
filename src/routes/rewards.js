@@ -6,6 +6,7 @@ const {
 } = require('../services/rewardsConfig');
 
 const router = express.Router();
+router.use(express.json()); // lee el cuerpo JSON aunque index.js lo registre después
 
 // ---------- Utilidades ----------
 async function getActiveSeason() {
@@ -280,4 +281,5 @@ router.post('/:userId/waitlist', async (req, res) => {
 });
 
 module.exports = router;
+
 
