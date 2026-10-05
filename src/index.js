@@ -21,6 +21,7 @@ app.use('/achievements', require('./routes/achievements'));
 app.use('/rewards', require('./routes/rewards'));
 app.use('/username', require('./routes/username'));
 app.use('/leagues', require('./routes/leagues'));
+app.use('/cards', require('./routes/cards'));
 
 const livePredictionsRoutes = require('./routes/livePredictions');
 app.use('/live-predictions', livePredictionsRoutes);
