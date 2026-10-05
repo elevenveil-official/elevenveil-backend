@@ -1,7 +1,10 @@
 const express = require('express');
 const supabase = require('../services/supabaseClient');
 const { apiSportsFetch } = require('../services/apiSportsClient');
+const { requireSelf } = require('../middleware/auth');
 const router = express.Router();
+
+router.param('userId', requireSelf);
 
 const MIN_STAKE = 10;
 const MIN_PCT_FLOOR = 8; // techo del multiplicador en ~12.5x

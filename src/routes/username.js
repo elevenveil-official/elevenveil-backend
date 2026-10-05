@@ -1,9 +1,11 @@
 const express = require('express');
 const supabase = require('../services/supabaseClient');
+const { requireSelf } = require('../middleware/auth');
 const { isNotAllowed } = require('../services/nameFilter');
 
 const router = express.Router();
 router.use(express.json());
+router.param('userId', requireSelf); // solo el propio jugador puede usar estas rutas
 
 const PATTERN = /^[A-Za-z0-9_]{3,16}$/;
 const COOLDOWN_DAYS = 30;
@@ -47,4 +49,3 @@ router.put('/:userId', async (req, res) => {
 });
 
 module.exports = router;
-

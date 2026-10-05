@@ -1,5 +1,6 @@
 const express = require('express');
 const supabase = require('../services/supabaseClient');
+const { requireSelf } = require('../middleware/auth');
 const { getRankForXp } = require('../services/rankEngine');
 const {
   SEASON_LEVELS, XP_PER_LEVEL, MISSIONS, PASS, dayRange, weekRange, levelForXp,
@@ -7,6 +8,7 @@ const {
 
 const router = express.Router();
 router.use(express.json()); // lee el cuerpo JSON aunque index.js lo registre después
+router.param('userId', requireSelf); // solo el propio jugador puede usar estas rutas
 
 // ---------- Utilidades ----------
 async function getActiveSeason() {

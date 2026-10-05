@@ -1,10 +1,19 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const fixturesRoutes = require('./routes/fixtures');
 
 const app = express();
+
+// Middlewares base
 app.use(cors());
+app.use(express.json());
+
+// Middleware de seguridad auth
+const { bodyGuard } = require('./middleware/auth');
+app.use(bodyGuard);
+
+// Rutas de la aplicación
+const fixturesRoutes = require('./routes/fixtures');
 app.use('/fixtures', fixturesRoutes);
 
 const predictionsRoutes = require('./routes/predictions');
@@ -13,7 +22,6 @@ app.use('/predictions', predictionsRoutes);
 const vaultRoutes = require('./routes/vault');
 app.use('/vault', vaultRoutes);
 
-// Aquí está la nueva ruta del leaderboard que te pedían añadir
 app.use('/leaderboard', require('./routes/leaderboard'));
 app.use('/followed-teams', require('./routes/followedTeams'));
 app.use('/notifications', require('./routes/notifications'));

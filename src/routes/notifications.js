@@ -5,7 +5,10 @@ const { sendPushNotification } = require('../services/pushSender');
 const { isTeamInMatch } = require('../services/teamMatching');
 const { getCached } = require('../services/simpleCache');
 const TEAMS = require('../data/teams');
+const { requireSelf } = require('../middleware/auth');
 const router = express.Router();
+
+router.param('userId', requireSelf);
 
 function buildEventText(event, teamName) {
   const player = event?.player?.name || 'A player';

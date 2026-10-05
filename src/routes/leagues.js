@@ -1,10 +1,12 @@
 const express = require('express');
 const crypto = require('crypto');
 const supabase = require('../services/supabaseClient');
+const { requireSelf } = require('../middleware/auth');
 const { isNotAllowed } = require('../services/nameFilter');
 
 const router = express.Router();
 router.use(express.json());
+router.param('userId', requireSelf); // solo el propio jugador puede usar estas rutas
 
 const MAX_LEAGUES_PER_USER = 10;
 const MAX_MEMBERS = 30;

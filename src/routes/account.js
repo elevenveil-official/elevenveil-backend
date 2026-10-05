@@ -1,6 +1,9 @@
 const express = require('express');
 const supabase = require('../services/supabaseClient');
+const { requireSelf } = require('../middleware/auth');
 const router = express.Router();
+
+router.param('userId', requireSelf);
 
 router.delete('/:userId', async (req, res) => {
   const { userId } = req.params;

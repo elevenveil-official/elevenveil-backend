@@ -1,7 +1,10 @@
 const express = require('express');
 const supabase = require('../services/supabaseClient');
 const { evaluateAchievements } = require('../services/achievementsEngine');
+const { requireSelf } = require('../middleware/auth');
 const router = express.Router();
+
+router.param('userId', requireSelf);
 
 router.get('/:userId', async (req, res) => {
   const userId = req.params.userId;

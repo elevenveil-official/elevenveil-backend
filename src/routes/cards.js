@@ -1,8 +1,10 @@
 const express = require('express');
 const supabase = require('../services/supabaseClient');
+const { requireSelf } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(express.json());
+router.param('userId', requireSelf); // solo el propio jugador puede usar estas rutas
 
 const clean = (v, max = 60) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const cleanLogo = (v) => (typeof v === 'string' && v.startsWith('https://') && v.length <= 300 ? v : null);

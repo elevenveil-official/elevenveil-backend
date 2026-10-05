@@ -3,7 +3,10 @@ const supabase = require('../services/supabaseClient');
 const { apiSportsFetch } = require('../services/apiSportsClient');
 const { scorePrediction } = require('../services/predictionScoringEngine');
 const { getRankForXp, getRankProgress } = require('../services/rankEngine');
+const { requireSelf } = require('../middleware/auth');
 const router = express.Router();
+
+router.param('userId', requireSelf);
 
 // a) La ruta POST / acepta ahora también el MVP y Starter (opcionales)
 router.post('/', async (req, res) => {
