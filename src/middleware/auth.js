@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const express = require('express');
 const supabase = require('../services/supabaseClient');
 
@@ -56,4 +57,19 @@ const bodyGuard = [
   },
 ];
 
-module.exports = { requireSelf, bodyGuard };
+// Para las rutas que dispara el servicio de tareas automáticas (cron-job.org): se llaman con ?key=TU_CLAVE
+// Se activa solo cuando existe la variable CRON_SECRET en Render. Sin ella no bloquea nada (solo avisa).
+function requireCron(req, res, next) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    console.warn(`[cron] CRON_SECRET no está configurada: ruta abierta a cualquiera: ${req.method} ${req.path}`);
+    return next();
+  }
+  const given = String(req.query.key || req.headers['x-cron-key'] || '');
+  const a = Buffer.from(given);
+  const b = Buffer.from(secret);
+  if (a.length === b.length && crypto.timingSafeEqual(a, b)) return next();
+  return res.status(401).json({ error: 'unauthorized' });
+}
+
+module.exports = { requireSelf, bodyGuard, requireCron };

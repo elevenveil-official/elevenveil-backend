@@ -3,7 +3,7 @@ const supabase = require('../services/supabaseClient');
 const { apiSportsFetch } = require('../services/apiSportsClient');
 const { scorePrediction } = require('../services/predictionScoringEngine');
 const { getRankForXp, getRankProgress } = require('../services/rankEngine');
-const { requireSelf } = require('../middleware/auth');
+const { requireSelf, requireCron } = require('../middleware/auth');
 const router = express.Router();
 
 router.param('userId', requireSelf);
@@ -168,7 +168,7 @@ router.get('/resolve/:fixtureId', async (req, res) => {
   }
 });
 
-router.get('/auto-resolve', async (req, res) => {
+router.get('/auto-resolve', requireCron, async (req, res) => {
   const { data: pending, error } = await supabase
     .from('match_predictions')
     .select('fixture_id')

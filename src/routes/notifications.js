@@ -5,7 +5,7 @@ const { sendPushNotification } = require('../services/pushSender');
 const { isTeamInMatch } = require('../services/teamMatching');
 const { getCached } = require('../services/simpleCache');
 const TEAMS = require('../data/teams');
-const { requireSelf } = require('../middleware/auth');
+const { requireSelf, requireCron } = require('../middleware/auth');
 const router = express.Router();
 
 router.param('userId', requireSelf);
@@ -17,7 +17,7 @@ function buildEventText(event, teamName) {
   return null;
 }
 
-router.get('/check-followed-matches', async (req, res) => {
+router.get('/check-followed-matches', requireCron, async (req, res) => {
   const liveData = getCached('live', 20000);
   const liveMatches = liveData?.response || [];
   if (liveMatches.length === 0) return res.json({ checked: 0, notified: 0 });
@@ -62,7 +62,7 @@ router.get('/check-followed-matches', async (req, res) => {
   res.json({ checked: liveMatches.length, notified: notifiedCount });
 });
 
-router.get('/prediction-reminders', async (req, res) => {
+router.get('/prediction-reminders', requireCron, async (req, res) => {
   const upcomingData = getCached('upcoming', 10 * 60 * 1000);
   const upcomingMatches = upcomingData?.response || [];
   if (upcomingMatches.length === 0) return res.json({ checked: 0, notified: 0 });
