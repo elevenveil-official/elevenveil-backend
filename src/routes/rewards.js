@@ -2,8 +2,10 @@ const express = require('express');
 const supabase = require('../services/supabaseClient');
 const { requireSelf } = require('../middleware/auth');
 const { getRankForXp } = require('../services/rankEngine');
+const crypto = require('crypto');
 const {
   SEASON_LEVELS, XP_PER_LEVEL, MISSIONS, PASS, dayRange, weekRange, levelForXp,
+  MAX_SHIELDS, SHIELD_CAP_COINS, CHEST_ODDS, CHEST_CONSOLATION_COINS, CHEST_POOL,
 } = require('../services/rewardsConfig');
 
 const router = express.Router();
@@ -70,14 +72,41 @@ async function grantXpAndCoins(userId, { xp = 0, coins = 0 }) {
   }
 }
 
+async function addChest(userId, tier, source) {
+  const { error } = await supabase.from('user_chests').insert({ user_id: userId, tier, source });
+  if (error) throw new Error(`chest_failed: ${error.message}`);
+}
+
+// Devuelve el premio realmente entregado (un escudo se convierte en monedas si ya tienes el máximo)
+async function grantShield(userId, amount) {
+  const { data: p } = await supabase.from('profiles').select('streak_shields').eq('id', userId).single();
+  const current = p?.streak_shields || 0;
+  if (current >= MAX_SHIELDS) {
+    await grantXpAndCoins(userId, { coins: SHIELD_CAP_COINS });
+    return { type: 'coins', amount: SHIELD_CAP_COINS, converted: true };
+  }
+  const next = Math.min(MAX_SHIELDS, current + amount);
+  const { error } = await supabase.from('profiles').update({ streak_shields: next }).eq('id', userId);
+  if (error) throw new Error(`shield_failed: ${error.message}`);
+  return { type: 'shield', amount: next - current };
+}
+
 async function grantReward(userId, reward, source) {
   if (reward.type === 'coins') {
     await grantXpAndCoins(userId, { coins: reward.amount });
-  } else {
-    await supabase
-      .from('user_rewards')
-      .upsert({ user_id: userId, reward_key: `${reward.type}:${reward.id}`, source }, { onConflict: 'user_id,reward_key', ignoreDuplicates: true });
+    return reward;
   }
+  if (reward.type === 'chest') {
+    await addChest(userId, reward.tier, source);
+    return reward;
+  }
+  if (reward.type === 'shield') {
+    return grantShield(userId, reward.amount);
+  }
+  await supabase
+    .from('user_rewards')
+    .upsert({ user_id: userId, reward_key: `${reward.type}:${reward.id}`, source }, { onConflict: 'user_id,reward_key', ignoreDuplicates: true });
+  return reward;
 }
 
 // ---------- GET: todo el estado de The Vault en una llamada ----------
@@ -89,12 +118,13 @@ router.get('/:userId', async (req, res) => {
     const week = weekRange(now);
     const allMissions = [...MISSIONS.daily, ...MISSIONS.weekly];
 
-    const [season, profileRes, ownedRes, missionClaimsRes, waitlistRes, progressList] = await Promise.all([
+    const [season, profileRes, ownedRes, missionClaimsRes, waitlistRes, chestsRes, progressList] = await Promise.all([
       getActiveSeason(),
-      supabase.from('profiles').select('xp, coins, is_pro, active_title, active_banner, active_frame').eq('id', userId).single(),
+      supabase.from('profiles').select('xp, coins, is_pro, active_title, active_banner, active_frame, streak_shields').eq('id', userId).single(),
       supabase.from('user_rewards').select('reward_key').eq('user_id', userId),
       supabase.from('mission_claims').select('mission_id, period_key').eq('user_id', userId).in('period_key', [day.key, week.key]),
       supabase.from('pro_waitlist').select('user_id').eq('user_id', userId).maybeSingle(),
+      supabase.from('user_chests').select('id, tier, created_at').eq('user_id', userId).is('opened_at', null).order('created_at', { ascending: true }),
       Promise.all(allMissions.map((m) => PROGRESS[m.id](userId, day, week))),
     ]);
 
@@ -152,6 +182,9 @@ router.get('/:userId', async (req, res) => {
       active: { title: profile.active_title, banner: profile.active_banner, frame: profile.active_frame },
       isPro: !!profile.is_pro,
       waitlisted: !!waitlistRes.data,
+      chests: (chestsRes.data || []).map((c) => ({ id: c.id, tier: c.tier })),
+      shields: profile.streak_shields || 0,
+      maxShields: MAX_SHIELDS,
       coins: profile.coins,
       xp: profile.xp,
     });
@@ -187,6 +220,7 @@ router.post('/:userId/missions/claim', async (req, res) => {
 
     try {
       await grantXpAndCoins(userId, found.mission.reward);
+      if (found.mission.reward.chest) await addChest(userId, found.mission.reward.chest, `mission:${missionId}`);
     } catch (grantErr) {
       // Si no se pudo dar el premio, se deshace el cobro para que pueda reintentarse
       await supabase.from('mission_claims').delete().eq('user_id', userId).eq('mission_id', missionId).eq('period_key', period.key);
@@ -230,14 +264,77 @@ router.post('/:userId/pass/claim', async (req, res) => {
       return res.status(claimErr.code === '23505' ? 409 : 500).json({ error: claimErr.code === '23505' ? 'already_claimed' : claimErr.message });
     }
 
+    let delivered = reward;
     try {
-      await grantReward(userId, reward, `pass:${season.id}:${track}:${level}`);
+      delivered = await grantReward(userId, reward, `pass:${season.id}:${track}:${level}`);
     } catch (grantErr) {
       await supabase.from('pass_claims').delete().eq('user_id', userId).eq('season_id', season.id).eq('level', level).eq('track', track);
       throw grantErr;
     }
-    res.json({ success: true, reward });
+    res.json({ success: true, reward: delivered });
   } catch (e) {
+    console.error('[rewards]', req.method, req.path, e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---------- POST: abrir un cofre ----------
+function pickWeighted(entries) {
+  const total = entries.reduce((sum, e) => sum + e.weight, 0);
+  let roll = crypto.randomInt(total);
+  for (const e of entries) {
+    if (roll < e.weight) return e.value;
+    roll -= e.weight;
+  }
+  return entries[entries.length - 1].value;
+}
+
+router.post('/:userId/chests/:chestId/open', async (req, res) => {
+  const { userId, chestId } = req.params;
+  let opened = false;
+  try {
+    // Se marca como abierto en una sola operación: dos toques seguidos no pueden abrirlo dos veces
+    const { data: marked } = await supabase
+      .from('user_chests')
+      .update({ opened_at: new Date().toISOString() })
+      .eq('id', chestId)
+      .eq('user_id', userId)
+      .is('opened_at', null)
+      .select('id, tier');
+    if (!marked || marked.length === 0) return res.status(404).json({ error: 'no_chest' });
+    opened = true;
+    const tier = marked[0].tier;
+
+    const { data: ownedRows } = await supabase.from('user_rewards').select('reward_key').eq('user_id', userId);
+    const owned = new Set((ownedRows || []).map((r) => r.reward_key));
+    const available = CHEST_POOL.filter((i) => !owned.has(`${i.type}:${i.id}`));
+
+    let reward;
+    if (available.length === 0) {
+      reward = { type: 'coins', amount: CHEST_CONSOLATION_COINS[tier] || 100, rarity: 'common' };
+      await grantXpAndCoins(userId, { coins: reward.amount });
+    } else {
+      const odds = CHEST_ODDS[tier] || CHEST_ODDS.bronze;
+      const byRarity = {};
+      available.forEach((i) => { (byRarity[i.rarity] = byRarity[i.rarity] || []).push(i); });
+      // solo cuentan las rarezas de las que aún te queda algo por conseguir
+      let entries = Object.keys(byRarity).map((r) => ({ value: r, weight: odds[r] || 0 })).filter((e) => e.weight > 0);
+      if (entries.length === 0) entries = Object.keys(byRarity).map((r) => ({ value: r, weight: 1 }));
+      const rarity = pickWeighted(entries);
+      const pool = byRarity[rarity];
+      const item = pool[crypto.randomInt(pool.length)];
+      reward = { type: item.type, id: item.id, rarity: item.rarity };
+      const { error } = await supabase
+        .from('user_rewards')
+        .upsert({ user_id: userId, reward_key: `${item.type}:${item.id}`, source: `chest:${chestId}` }, { onConflict: 'user_id,reward_key', ignoreDuplicates: true });
+      if (error) throw new Error(`reward_failed: ${error.message}`);
+    }
+    res.json({ success: true, tier, reward });
+  } catch (e) {
+    if (opened) {
+      // si algo falló después de abrirlo, se deja el cofre otra vez cerrado para poder reintentar
+      await supabase.from('user_chests').update({ opened_at: null }).eq('id', chestId).eq('user_id', userId);
+    }
     console.error('[rewards]', req.method, req.path, e);
     res.status(500).json({ error: e.message });
   }

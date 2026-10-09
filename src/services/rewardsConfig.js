@@ -1,3 +1,6 @@
+// Configuración central de misiones y pase de temporada.
+// Para ajustar dificultad o premios, solo hay que tocar este archivo.
+
 const SEASON_LEVELS = 30;
 const XP_PER_LEVEL = 200;
 
@@ -9,9 +12,20 @@ const MISSIONS = {
   ],
   weekly: [
     { id: 'weekly_predict_5', target: 5, reward: { xp: 100, coins: 200 } },
-    { id: 'weekly_correct_3', target: 3, reward: { xp: 150, coins: 250 } },
-    { id: 'weekly_scorer_1', target: 1, reward: { xp: 200, coins: 300 } },
+    { id: 'weekly_correct_3', target: 3, reward: { xp: 150, coins: 250, chest: 'bronze' } },
+    { id: 'weekly_scorer_1', target: 1, reward: { xp: 200, coins: 300, chest: 'silver' } },
   ],
+};
+
+const FREE_EXTRAS = {
+  4: { type: 'chest', tier: 'bronze' },
+  7: { type: 'shield', amount: 1 },
+  11: { type: 'chest', tier: 'bronze' },
+  15: { type: 'chest', tier: 'silver' },
+  17: { type: 'shield', amount: 1 },
+  22: { type: 'chest', tier: 'silver' },
+  26: { type: 'chest', tier: 'bronze' },
+  28: { type: 'chest', tier: 'silver' },
 };
 
 const FREE_COSMETICS = {
@@ -42,19 +56,68 @@ const PRO_COSMETICS = {
   30: { type: 'frame', id: 's1_legend' },
 };
 
+const PRO_EXTRAS = {
+  2: { type: 'chest', tier: 'bronze' },
+  4: { type: 'shield', amount: 1 },
+  6: { type: 'chest', tier: 'bronze' },
+  7: { type: 'chest', tier: 'silver' },
+  9: { type: 'shield', amount: 1 },
+  11: { type: 'chest', tier: 'bronze' },
+  13: { type: 'chest', tier: 'silver' },
+  14: { type: 'shield', amount: 1 },
+  16: { type: 'chest', tier: 'bronze' },
+  17: { type: 'chest', tier: 'silver' },
+  19: { type: 'shield', amount: 1 },
+  20: { type: 'chest', tier: 'bronze' },
+  22: { type: 'chest', tier: 'silver' },
+  23: { type: 'shield', amount: 1 },
+  25: { type: 'chest', tier: 'gold' },
+  26: { type: 'chest', tier: 'bronze' },
+  28: { type: 'chest', tier: 'silver' },
+  29: { type: 'chest', tier: 'gold' },
+};
+
 function buildPass() {
   const pass = [];
   for (let level = 1; level <= SEASON_LEVELS; level++) {
     pass.push({
       level,
-      free: FREE_COSMETICS[level] || { type: 'coins', amount: 50 + level * 10 },
-      pro: PRO_COSMETICS[level] || null,
+      free: FREE_COSMETICS[level] || FREE_EXTRAS[level] || { type: 'coins', amount: 50 + level * 10 },
+      pro: PRO_COSMETICS[level] || PRO_EXTRAS[level] || null,
     });
   }
   return pass;
 }
 
 const PASS = buildPass();
+
+// ---------- Cofres ----------
+const MAX_SHIELDS = 3;
+const SHIELD_CAP_COINS = 150; // si ya tienes el máximo de escudos, el premio se convierte en monedas
+
+// Probabilidad (en %) de cada rareza según el tipo de cofre
+const CHEST_ODDS = {
+  bronze: { common: 75, rare: 22, epic: 3, legendary: 0 },
+  silver: { common: 45, rare: 40, epic: 13, legendary: 2 },
+  gold: { common: 10, rare: 45, epic: 35, legendary: 10 },
+};
+// Si ya lo tienes todo, el cofre da monedas
+const CHEST_CONSOLATION_COINS = { bronze: 100, silver: 250, gold: 600 };
+
+// Cosméticos que SOLO salen de cofres (los del pase son exclusivos del pase)
+const CHEST_POOL = [
+  { type: 'title', id: 'rookie_dreamer', rarity: 'common' },
+  { type: 'title', id: 'late_bloomer', rarity: 'common' },
+  { type: 'banner', id: 'pitch_lines', rarity: 'common' },
+  { type: 'banner', id: 'night_match', rarity: 'rare' },
+  { type: 'title', id: 'hat_trick_hero', rarity: 'rare' },
+  { type: 'frame', id: 'chest_mint', rarity: 'rare' },
+  { type: 'title', id: 'crystal_ball', rarity: 'epic' },
+  { type: 'banner', id: 'derby_day', rarity: 'epic' },
+  { type: 'frame', id: 'chest_neon', rarity: 'epic' },
+  { type: 'banner', id: 'golden_boot', rarity: 'legendary' },
+  { type: 'frame', id: 'chest_prism', rarity: 'legendary' },
+];
 
 // ---------- Periodos (UTC) ----------
 function dayRange(now = new Date()) {
@@ -74,4 +137,7 @@ function levelForXp(passXp) {
   return Math.min(SEASON_LEVELS, Math.floor(passXp / XP_PER_LEVEL));
 }
 
-module.exports = { SEASON_LEVELS, XP_PER_LEVEL, MISSIONS, PASS, dayRange, weekRange, levelForXp };
+module.exports = {
+  SEASON_LEVELS, XP_PER_LEVEL, MISSIONS, PASS, dayRange, weekRange, levelForXp,
+  MAX_SHIELDS, SHIELD_CAP_COINS, CHEST_ODDS, CHEST_CONSOLATION_COINS, CHEST_POOL,
+};

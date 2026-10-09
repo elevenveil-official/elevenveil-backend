@@ -197,35 +197,50 @@ router.get('/rank/:userId', async (req, res) => {
   res.json(getRankProgress(profile.xp));
 });
 
-router.get('/streak/:userId', async (req, res) => {
-  const { userId } = req.params;
-
-  const { data, error } = await supabase
-    .from('match_predictions')
-    .select('vision_score, scored_at')
-    .eq('user_id', userId)
-    .not('scored_at', 'is', null)
-    .order('scored_at', { ascending: false });
-
-  if (error) return res.status(500).json({ error: error.message });
-
+// Una racha cuenta predicciones seguidas con Vision Score > 0.
+// Un fallo "cubierto" por un escudo no rompe la racha (ni suma): se salta.
+function computeStreaks(preds, coveredFixtures) {
   let currentStreak = 0;
-  for (const pred of data) {
-    if (pred.vision_score > 0) currentStreak++;
+  for (const p of preds) { // de más reciente a más antigua
+    if (p.vision_score > 0) currentStreak++;
+    else if (coveredFixtures.has(p.fixture_id)) continue;
     else break;
   }
-
-  let bestStreak = 0, running = 0;
-  for (const pred of [...data].reverse()) {
-    if (pred.vision_score > 0) {
+  let bestStreak = 0;
+  let running = 0;
+  for (const p of [...preds].reverse()) { // de más antigua a más reciente
+    if (p.vision_score > 0) {
       running++;
       bestStreak = Math.max(bestStreak, running);
+    } else if (coveredFixtures.has(p.fixture_id)) {
+      continue;
     } else {
       running = 0;
     }
   }
+  return { currentStreak, bestStreak };
+}
 
-  res.json({ currentStreak, bestStreak });
+router.get('/streak/:userId', async (req, res) => {
+  const { userId } = req.params;
+
+  const [predsRes, shieldUsesRes, profileRes] = await Promise.all([
+    supabase
+      .from('match_predictions')
+      .select('fixture_id, vision_score, scored_at')
+      .eq('user_id', userId)
+      .not('scored_at', 'is', null)
+      .order('scored_at', { ascending: false }),
+    supabase.from('shield_uses').select('fixture_id').eq('user_id', userId),
+    supabase.from('profiles').select('streak_shields').eq('id', userId).single(),
+  ]);
+
+  if (predsRes.error) return res.status(500).json({ error: predsRes.error.message });
+
+  const covered = new Set((shieldUsesRes.data || []).map((s) => s.fixture_id));
+  const { currentStreak, bestStreak } = computeStreaks(predsRes.data || [], covered);
+
+  res.json({ currentStreak, bestStreak, shields: profileRes.data?.streak_shields || 0 });
 });
 
 router.get('/consensus/:fixtureId', async (req, res) => {

@@ -2,7 +2,7 @@ const express = require('express');
 const supabase = require('../services/supabaseClient');
 const { apiSportsFetch } = require('../services/apiSportsClient');
 const { getRankForXp } = require('../services/rankEngine');
-const { requireSelf } = require('../middleware/auth');
+const { requireSelf, requireCron } = require('../middleware/auth');
 const router = express.Router();
 
 router.param('userId', requireSelf);
@@ -41,7 +41,7 @@ router.post('/', async (req, res) => {
   res.json({ prediction: data[0] });
 });
 
-router.get('/auto-resolve', async (req, res) => {
+router.get('/auto-resolve', requireCron, async (req, res) => {
   const { data: pending, error } = await supabase
     .from('live_predictions')
     .select('*')
