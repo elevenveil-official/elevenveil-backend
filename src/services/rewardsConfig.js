@@ -101,6 +101,9 @@ const CHEST_ODDS = {
   silver: { common: 45, rare: 40, epic: 13, legendary: 2 },
   gold: { common: 10, rare: 45, epic: 35, legendary: 10 },
 };
+// Probabilidad (en %) del tipo de cofre diario de PRO
+const PRO_DAILY_CHEST_ODDS = { bronze: 80, silver: 17, gold: 3 };
+
 // Si ya lo tienes todo, el cofre da monedas
 const CHEST_CONSOLATION_COINS = { bronze: 100, silver: 250, gold: 600 };
 
@@ -139,5 +142,5 @@ function levelForXp(passXp) {
 
 module.exports = {
   SEASON_LEVELS, XP_PER_LEVEL, MISSIONS, PASS, dayRange, weekRange, levelForXp,
-  MAX_SHIELDS, SHIELD_CAP_COINS, CHEST_ODDS, CHEST_CONSOLATION_COINS, CHEST_POOL,
+  MAX_SHIELDS, SHIELD_CAP_COINS, CHEST_ODDS, CHEST_CONSOLATION_COINS, CHEST_POOL, PRO_DAILY_CHEST_ODDS,
 };

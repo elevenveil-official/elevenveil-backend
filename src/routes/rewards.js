@@ -5,7 +5,7 @@ const { getRankForXp } = require('../services/rankEngine');
 const crypto = require('crypto');
 const {
   SEASON_LEVELS, XP_PER_LEVEL, MISSIONS, PASS, dayRange, weekRange, levelForXp,
-  MAX_SHIELDS, SHIELD_CAP_COINS, CHEST_ODDS, CHEST_CONSOLATION_COINS, CHEST_POOL,
+  MAX_SHIELDS, SHIELD_CAP_COINS, CHEST_ODDS, CHEST_CONSOLATION_COINS, CHEST_POOL, PRO_DAILY_CHEST_ODDS,
 } = require('../services/rewardsConfig');
 
 const router = express.Router();
@@ -118,19 +118,22 @@ router.get('/:userId', async (req, res) => {
     const week = weekRange(now);
     const allMissions = [...MISSIONS.daily, ...MISSIONS.weekly];
 
-    const [season, profileRes, ownedRes, missionClaimsRes, waitlistRes, chestsRes, progressList] = await Promise.all([
+    const [season, profileRes, ownedRes, missionClaimsRes, waitlistRes, chestsRes, proClaimsRes, progressList] = await Promise.all([
       getActiveSeason(),
       supabase.from('profiles').select('xp, coins, is_pro, active_title, active_banner, active_frame, streak_shields').eq('id', userId).single(),
       supabase.from('user_rewards').select('reward_key').eq('user_id', userId),
       supabase.from('mission_claims').select('mission_id, period_key').eq('user_id', userId).in('period_key', [day.key, week.key]),
       supabase.from('pro_waitlist').select('user_id').eq('user_id', userId).maybeSingle(),
       supabase.from('user_chests').select('id, tier, created_at').eq('user_id', userId).is('opened_at', null).order('created_at', { ascending: true }),
+      supabase.from('pro_claims').select('kind, period_key').eq('user_id', userId).in('period_key', [day.key, week.key]),
       Promise.all(allMissions.map((m) => PROGRESS[m.id](userId, day, week))),
     ]);
 
     const profile = profileRes.data;
     if (!profile) return res.status(404).json({ error: 'profile_not_found' });
 
+    const proClaimed = new Set((proClaimsRes.data || []).map((c) => `${c.kind}:${c.period_key}`));
+    const isProUser = !!profile.is_pro;
     const claimedMissions = new Set((missionClaimsRes.data || []).map((c) => c.mission_id));
     const progressById = {};
     allMissions.forEach((m, i) => { progressById[m.id] = progressList[i]; });
@@ -185,6 +188,14 @@ router.get('/:userId', async (req, res) => {
       chests: (chestsRes.data || []).map((c) => ({ id: c.id, tier: c.tier })),
       shields: profile.streak_shields || 0,
       maxShields: MAX_SHIELDS,
+      pro: {
+        daily: { available: isProUser && !proClaimed.has(`daily_chest:${day.key}`), resetsAt: day.end.toISOString() },
+        weeklyShield: {
+          available: isProUser && !proClaimed.has(`weekly_shield:${week.key}`) && (profile.streak_shields || 0) < MAX_SHIELDS,
+          claimed: proClaimed.has(`weekly_shield:${week.key}`),
+          resetsAt: week.end.toISOString(),
+        },
+      },
       coins: profile.coins,
       xp: profile.xp,
     });
@@ -335,6 +346,63 @@ router.post('/:userId/chests/:chestId/open', async (req, res) => {
       // si algo falló después de abrirlo, se deja el cofre otra vez cerrado para poder reintentar
       await supabase.from('user_chests').update({ opened_at: null }).eq('id', chestId).eq('user_id', userId);
     }
+    console.error('[rewards]', req.method, req.path, e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---------- POST: cofre diario de PRO ----------
+async function isProUser(userId) {
+  const { data } = await supabase.from('profiles').select('is_pro').eq('id', userId).single();
+  return !!data?.is_pro;
+}
+
+router.post('/:userId/pro/daily-chest', async (req, res) => {
+  const { userId } = req.params;
+  const day = dayRange(new Date());
+  try {
+    if (!(await isProUser(userId))) return res.status(403).json({ error: 'pro_required' });
+
+    const { error: claimErr } = await supabase.from('pro_claims').insert({ user_id: userId, kind: 'daily_chest', period_key: day.key });
+    if (claimErr) {
+      return res.status(claimErr.code === '23505' ? 409 : 500).json({ error: claimErr.code === '23505' ? 'already_claimed' : claimErr.message });
+    }
+    const odds = Object.keys(PRO_DAILY_CHEST_ODDS).map((tier) => ({ value: tier, weight: PRO_DAILY_CHEST_ODDS[tier] }));
+    const tier = pickWeighted(odds);
+    try {
+      await addChest(userId, tier, 'pro_daily');
+    } catch (grantErr) {
+      await supabase.from('pro_claims').delete().eq('user_id', userId).eq('kind', 'daily_chest').eq('period_key', day.key);
+      throw grantErr;
+    }
+    res.json({ success: true, chest: { tier } });
+  } catch (e) {
+    console.error('[rewards]', req.method, req.path, e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---------- POST: escudo semanal de PRO ----------
+router.post('/:userId/pro/weekly-shield', async (req, res) => {
+  const { userId } = req.params;
+  const week = weekRange(new Date());
+  try {
+    const { data: p } = await supabase.from('profiles').select('is_pro, streak_shields').eq('id', userId).single();
+    if (!p?.is_pro) return res.status(403).json({ error: 'pro_required' });
+    if ((p.streak_shields || 0) >= MAX_SHIELDS) return res.status(400).json({ error: 'shields_full' });
+
+    const { error: claimErr } = await supabase.from('pro_claims').insert({ user_id: userId, kind: 'weekly_shield', period_key: week.key });
+    if (claimErr) {
+      return res.status(claimErr.code === '23505' ? 409 : 500).json({ error: claimErr.code === '23505' ? 'already_claimed' : claimErr.message });
+    }
+    try {
+      await grantShield(userId, 1);
+    } catch (grantErr) {
+      await supabase.from('pro_claims').delete().eq('user_id', userId).eq('kind', 'weekly_shield').eq('period_key', week.key);
+      throw grantErr;
+    }
+    res.json({ success: true });
+  } catch (e) {
     console.error('[rewards]', req.method, req.path, e);
     res.status(500).json({ error: e.message });
   }

@@ -5,7 +5,7 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, username, xp, rank')
+    .select('id, username, xp, rank, is_pro')
     .order('xp', { ascending: false })
     .limit(50);
 

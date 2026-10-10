@@ -39,7 +39,7 @@ async function loadStandings(leagueIds, season) {
   if (!userIds.length) return result;
 
   const [profilesRes, progressRes] = await Promise.all([
-    supabase.from('profiles').select('id, username, rank, xp, active_title').in('id', userIds),
+    supabase.from('profiles').select('id, username, rank, xp, active_title, is_pro').in('id', userIds),
     season
       ? supabase.from('season_progress').select('user_id, pass_xp').eq('season_id', season.id).in('user_id', userIds)
       : Promise.resolve({ data: [] }),
@@ -57,6 +57,7 @@ async function loadStandings(leagueIds, season) {
       username: p.username,
       rank: p.rank,
       title: p.active_title,
+      isPro: !!p.is_pro,
       score: season ? (passXpById[m.user_id] || 0) : (p.xp || 0),
       joinedAt: m.joined_at,
     });
@@ -125,7 +126,7 @@ router.get('/:userId/:leagueId', async (req, res) => {
       metric: season ? 'season' : 'total',
       seasonName: season?.name || null,
       standings: standings.map((m, i) => ({
-        position: i + 1, id: m.id, username: m.username, rank: m.rank, title: m.title, score: m.score, isMe: m.id === userId,
+        position: i + 1, id: m.id, username: m.username, rank: m.rank, title: m.title, isPro: m.isPro, score: m.score, isMe: m.id === userId,
       })),
     });
   } catch (e) {
