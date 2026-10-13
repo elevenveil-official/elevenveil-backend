@@ -9,6 +9,11 @@ router.use(express.json());
 router.param('userId', requireSelf); // solo el propio jugador puede usar estas rutas
 
 const MAX_LEAGUES_PER_USER = 10;
+const FREE_OWN_LIMIT = 2; // las cuentas gratuitas pueden CREAR 2 ligas (unirse a más, hasta 10)
+
+// Personalización (solo PRO): icono y color elegidos entre estas opciones
+const LEAGUE_ICONS = ['shield-crown-outline', 'soccer', 'trophy', 'crown', 'fire', 'lightning-bolt', 'star-four-points', 'rocket-launch', 'sword-cross', 'skull', 'ghost', 'diamond-stone'];
+const LEAGUE_COLORS = ['#0EA96F', '#3B82F6', '#A855F7', '#EC4899', '#F43F5E', '#F97316', '#FACC15', '#22D3EE'];
 const MAX_MEMBERS = 30;
 const NAME_PATTERN = /^[\p{L}\p{N} ._\-!]{3,24}$/u;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sin 0, O, 1, I para evitar confusiones
@@ -82,7 +87,7 @@ router.get('/:userId', async (req, res) => {
     if (!ids.length) return res.json({ leagues: [] });
 
     const [{ data: leagues }, season] = await Promise.all([
-      supabase.from('leagues').select('id, name, code, owner_id').in('id', ids),
+      supabase.from('leagues').select('id, name, code, owner_id, icon, color').in('id', ids),
       getActiveSeason(),
     ]);
     const standings = await loadStandings(ids, season);
@@ -94,6 +99,8 @@ router.get('/:userId', async (req, res) => {
           id: l.id,
           name: l.name,
           code: l.code,
+          icon: l.icon || null,
+          color: l.color || null,
           memberCount: list.length,
           position: list.findIndex((m) => m.id === userId) + 1,
           isOwner: l.owner_id === userId,
@@ -115,14 +122,14 @@ router.get('/:userId/:leagueId', async (req, res) => {
     if (!membership) return res.status(403).json({ error: 'not_member' });
 
     const [{ data: league }, season] = await Promise.all([
-      supabase.from('leagues').select('id, name, code, owner_id').eq('id', leagueId).single(),
+      supabase.from('leagues').select('id, name, code, owner_id, icon, color').eq('id', leagueId).single(),
       getActiveSeason(),
     ]);
     if (!league) return res.status(404).json({ error: 'not_found' });
     const standings = (await loadStandings([leagueId], season))[leagueId];
 
     res.json({
-      league: { id: league.id, name: league.name, code: league.code, isOwner: league.owner_id === userId, memberCount: standings.length },
+      league: { id: league.id, name: league.name, code: league.code, icon: league.icon || null, color: league.color || null, isOwner: league.owner_id === userId, memberCount: standings.length },
       metric: season ? 'season' : 'total',
       seasonName: season?.name || null,
       standings: standings.map((m, i) => ({
@@ -143,6 +150,12 @@ router.post('/:userId', async (req, res) => {
     if (!NAME_PATTERN.test(name)) return res.status(400).json({ error: 'invalid_name' });
     if (isNotAllowed(name)) return res.status(400).json({ error: 'not_allowed' });
     if ((await countMemberships(userId)) >= MAX_LEAGUES_PER_USER) return res.status(400).json({ error: 'too_many_leagues' });
+
+    const [{ data: me }, { count: owned }] = await Promise.all([
+      supabase.from('profiles').select('is_pro').eq('id', userId).single(),
+      supabase.from('leagues').select('id', { count: 'exact', head: true }).eq('owner_id', userId),
+    ]);
+    if (!me?.is_pro && (owned || 0) >= FREE_OWN_LIMIT) return res.status(403).json({ error: 'free_limit' });
 
     const id = crypto.randomUUID();
     let code = null;
@@ -212,6 +225,30 @@ router.post('/:userId/:leagueId/leave', async (req, res) => {
       }
     }
     res.json({ success: true });
+  } catch (e) {
+    console.error('[leagues]', req.method, req.path, e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---------- PUT: personalizar una liga (solo quien la administra y es PRO) ----------
+router.put('/:userId/:leagueId/style', async (req, res) => {
+  try {
+    const { userId, leagueId } = req.params;
+    const { icon, color } = req.body || {};
+    if (!LEAGUE_ICONS.includes(icon) || !LEAGUE_COLORS.includes(color)) return res.status(400).json({ error: 'invalid_style' });
+
+    const [{ data: league }, { data: me }] = await Promise.all([
+      supabase.from('leagues').select('owner_id').eq('id', leagueId).single(),
+      supabase.from('profiles').select('is_pro').eq('id', userId).single(),
+    ]);
+    if (!league) return res.status(404).json({ error: 'not_found' });
+    if (league.owner_id !== userId) return res.status(403).json({ error: 'not_owner' });
+    if (!me?.is_pro) return res.status(403).json({ error: 'pro_required' });
+
+    const { error } = await supabase.from('leagues').update({ icon, color }).eq('id', leagueId);
+    if (error) throw new Error(error.message);
+    res.json({ success: true, icon, color });
   } catch (e) {
     console.error('[leagues]', req.method, req.path, e);
     res.status(500).json({ error: e.message });
