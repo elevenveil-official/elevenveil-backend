@@ -3,6 +3,7 @@ const supabase = require('../services/supabaseClient');
 const { apiSportsFetch } = require('../services/apiSportsClient');
 const { scorePrediction } = require('../services/predictionScoringEngine');
 const { getRankForXp, getRankProgress } = require('../services/rankEngine');
+const { createReceipt, settleReceipt, getFixtureInfo } = require('../services/receiptService');
 const { requireSelf, requireCron } = require('../middleware/auth');
 const router = express.Router();
 
@@ -34,6 +35,13 @@ router.post('/', async (req, res) => {
     return res.status(403).json({ error: 'Predictions are locked — match has started.' });
   }
 
+  // Verificación del inicio con la API (en caché, una llamada por partido).
+  // Si la API no responde, se sigue con la hora que envía la app y el recibo queda como "no verificado".
+  const fixtureInfo = await getFixtureInfo(fixtureId);
+  if (fixtureInfo?.kickoff && now >= new Date(fixtureInfo.kickoff)) {
+    return res.status(403).json({ error: 'Predictions are locked — match has started.' });
+  }
+
   const { data, error } = await supabase
     .from('match_predictions')
     .upsert({
@@ -53,7 +61,34 @@ router.post('/', async (req, res) => {
     .select();
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json({ prediction: data[0] });
+
+  // Recibo sellado. Si algo falla aquí, la predicción ya está guardada y no se rompe nada.
+  let receipt = null;
+  try {
+    receipt = await createReceipt({
+      userId,
+      fixtureId,
+      picks: {
+        predictedHome: predictedHomeScore,
+        predictedAway: predictedAwayScore,
+        scorerId: predictedScorerId,
+        scorerName: predictedScorerName,
+        mvpId: predictedMvpId,
+        mvpName: predictedMvpName,
+        starterId: predictedStarterId,
+        starterName: predictedStarterName,
+      },
+      fixtureInfo,
+      clientKickoff: matchStartTime,
+    });
+  } catch (e) {
+    console.error('createReceipt failed:', e.message);
+  }
+
+  res.json({
+    prediction: data[0],
+    receipt: receipt ? { code: receipt.code, url: receipt.url, sealedAt: receipt.sealed_at } : null,
+  });
 });
 
 // b) Función para obtener goleadores excluyendo penaltis fallados y goles en propia puerta
@@ -147,6 +182,13 @@ async function resolveFixturePredictions(fixtureId) {
         correct_starter: scored.correctStarter,
       })
       .eq('id', pred.id);
+
+    // Marca el recibo como ✓ o ✗ (si esta predicción tiene recibo)
+    try {
+      await settleReceipt({ userId: pred.user_id, fixtureId, scored, fixture });
+    } catch (e) {
+      console.error('settleReceipt failed:', e.message);
+    }
 
     const { data: profile } = await supabase.from('profiles').select('xp').eq('id', pred.user_id).single();
     const newXp = (profile?.xp || 0) + scored.xpEarned;

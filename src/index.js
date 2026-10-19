@@ -30,6 +30,8 @@ app.use('/rewards', require('./routes/rewards'));
 app.use('/username', require('./routes/username'));
 app.use('/leagues', require('./routes/leagues'));
 app.use('/stats', require('./routes/stats'));
+app.use('/receipts', require('./routes/receipts'));
+app.use('/r', require('./routes/receiptPage'));
 app.use('/cards', require('./routes/cards'));
 
 const livePredictionsRoutes = require('./routes/livePredictions');
