@@ -32,6 +32,8 @@ app.use('/leagues', require('./routes/leagues'));
 app.use('/stats', require('./routes/stats'));
 app.use('/receipts', require('./routes/receipts'));
 app.use('/r', require('./routes/receiptPage'));
+app.use('/capsules', require('./routes/capsules'));
+app.use('/c', require('./routes/capsulePage'));
 app.use('/cards', require('./routes/cards'));
 
 const livePredictionsRoutes = require('./routes/livePredictions');
