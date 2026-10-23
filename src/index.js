@@ -34,6 +34,8 @@ app.use('/receipts', require('./routes/receipts'));
 app.use('/r', require('./routes/receiptPage'));
 app.use('/capsules', require('./routes/capsules'));
 app.use('/c', require('./routes/capsulePage'));
+app.use('/public-profile', require('./routes/publicProfile'));
+app.use('/p', require('./routes/profilePage'));
 app.use('/cards', require('./routes/cards'));
 
 const livePredictionsRoutes = require('./routes/livePredictions');
